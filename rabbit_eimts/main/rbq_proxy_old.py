@@ -2,8 +2,6 @@
 
 
 
-
-
 '''
 for daemon setup script
 create  - >> "mcedit /etc/systemd/system/rbq_proxy.service"
@@ -72,70 +70,46 @@ app = FastAPI()
 
 
 def send_to_rabbitmq(route_key: str, message: str):
-    try:
-        credentials = pika.PlainCredentials(rbq_producer_login, rbq_producer_pass)
-        connection = pika.BlockingConnection(pika.ConnectionParameters(
-            host=rbq_lb_host,
-            credentials=credentials
-        ))
-        channel = connection.channel()
-        if "nb" in str(route_key):
-            channel.basic_publish(
-                exchange=rbq_netbox_exchange,
-                routing_key=route_key,
-                body=message,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,
-                ))
-            return [True,None]
-        elif "alarms" in str(route_key):
-            channel.basic_publish(
-                exchange=rbq_alermanager_exchange,
-                routing_key=route_key,
-                body=message,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,
-                ))
-            return [True,None]
-        connection.close()
-    except Exception as err:
-        return [False,err]
+    credentials = pika.PlainCredentials(rbq_producer_login, rbq_producer_pass)
+    connection = pika.BlockingConnection(pika.ConnectionParameters(
+        host=rbq_lb_host,
+        credentials=credentials
+    ))
+    channel = connection.channel()
+    if "nb" in str(route_key):
+        channel.basic_publish(
+            exchange=rbq_netbox_exchange,
+            routing_key=route_key,
+            body=message,
+            properties=pika.BasicProperties(
+                delivery_mode=2,
+            ))
+    elif "alarms" in str(route_key):
+        channel.basic_publish(
+            exchange=rbq_alermanager_exchange,
+            routing_key=route_key,
+            body=message,
+            properties=pika.BasicProperties(
+                delivery_mode=2,
+            ))
+    connection.close()
 
 @app.post('/rabbitmq_proxy/{route_key}')# create path for main webhook
 async def webhook_handler(route_key: str, request: Request):
     current_time = str(datetime.now()).split('.')[0]
     try:
-        if "nb" in str(route_key):
-            raw_data = await request.body()
-            message_logger.info(f"Recieved message from(1): {route_key}: {raw_data}")
-            data = await request.json()
-            message_logger.info(f"Recieved message from(2): {route_key}: {data}")
-            message = json.dumps(data, ensure_ascii=False)
-            message_logger.info(f"Recieved message from(3): {route_key}: {message}")
-        elif "alarm" in str(route_key):
-            raw_data = await request.body()
-            message_logger.info(f"Recieved message from(1): {route_key}: {raw_data}")
-            decoded_message = raw_data.decode('utf-8')
-            message = decoded_message.replace('\\', '\\\\')
-            message_logger1.info(f"Recieved message from: {route_key}: {message}")
-            message_logger.info(f"Recieved message from(2): {route_key}: {decoded_message}")
-        else:
-            data = await request.json()
-            message_logger.info(f"Recieved message from(1): {route_key}: {data}")
-            message = json.dumps(data, ensure_ascii=False)
-            message_logger.info(f"Recieved message from(2): {route_key}: {message}")
-        if not message:
+        data = await request.json()
+        message_logger.info(f"Recieved message from: {route_key}: {data}")
+        if "alarm" in str(route_key):
+            message_logger1.info(f"Recieved message from: {route_key}: {data}")
+        print(f"Raw data received: {data}")
+        if not data:
             print(f'\n\n{current_time}\n')
             raise HTTPException(status_code=400, detail="No data provided")
-        else:
-            result = send_to_rabbitmq(route_key, message)
-            if result[0] == True:
-                message_logger.info(f"Message sent to RabbitMQ queue: {route_key}")
-                return {"message": f"Message sent to RabbitMQ queue: {route_key}"}
-            elif result[0] == False:
-                message_logger.info(f"Message sent !FAILED! to RabbitMQ queue: {route_key} because ERROR - {result[1]}")
-
-
+        print(f'\n\n{current_time}\n{data}\n\n')
+        message = json.dumps(data)
+        send_to_rabbitmq(route_key, message)
+        return {"message": f"Message sent to RabbitMQ queue: {route_key}"}
     except HTTPException as e:
         print(f'\n\n{current_time}\n')
         print(f"HTTP error: {e.detail}\n")
@@ -157,18 +131,6 @@ async def webhook_handler(route_key: str, request: Request):
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host=listen_host, port=server_port)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
